@@ -19,27 +19,29 @@ class LoRA(nn.Module):
         """
         super().__init__()
         # TODO: Initialize LoRA parameters
-        self.r = None
-        self.alpha = None
-        self.original_layer = None
+        self.r = r
+        self.alpha = alpha
+        self.original_layer = original_layer
 
         # TODO: Low-rank matrices A and B for LoRA
-        self.A = None
-        self.B = None
+        self.A = torch.empty(self.original_layer.in_features, r)
+        self.B = torch.zeros(r, self.original_layer.out_features)
 
         # TODO: Initialize LoRA weights (B is zero-initialized, A is random)
-        nn.init.kaiming_uniform_(None)
+        nn.init.kaiming_uniform_(self.A, a=math.sqrt(5))
         
         # TODO: Scaling factor alpha 
-        self.scaling = None
+        self.scaling = alpha/r
 
         # TODO: Freeze the original layer parameters
-        for param in None:
+        for param in self.original_layer.parameters():
             param.requires_grad = False
                 
     def forward(self, x):
         # TODO: Perform forward pass with low-rank update
-        return None
+        h = self.original_layer(x)
+        lora_update = (x @ self.A @ self.B) * self.scaling
+        return h + lora_update
 
 def inject_lora_into_model(model, r=4, alpha=32, device='cpu'):
     """
@@ -55,15 +57,21 @@ def inject_lora_into_model(model, r=4, alpha=32, device='cpu'):
         model (PreTrainedModel): The model with LoRA injected into attention layers.
     """
     # TODO: Iterate through all child modules of the model
-    for child_name, child_module in None:
+    child_list = ["encdecattention", "selfattention", "q", "k", "v", "o"]
+
+    for child_name, child_module in model.named_modules():
         # TODO: Check if the child module is a linear layer of the attention module
-        if child_name.lower() in None:
+        parts = child_name.split('.')
+        last_part = parts[-1]
+        if last_part in child_list:
             # TODO: Create LoRA layer for linear module
-            lora_layer = None
-            setattr(model, child_name, lora_layer)
-        else:
-            # TODO: Recursively inject LoRA into child module
-            pass
+            parent = model
+            for p in parts[:-1]:
+                parent = getattr(parent, p)
+
+            lora_layer = LoRA(child_module, r, alpha)
+            setattr(parent, last_part, lora_layer)
+
     return model.to(device)
 
 
@@ -78,7 +86,7 @@ class SoftPromptEmbedding(nn.Module):
         """
         super().__init__()
         # TODO: Initialize soft prompt embeddings
-        self.soft_prompt = None
+        self.soft_prompt = nn.Parameter(torch.ones(prompt_length, model_hidden_size))
 
     def forward(self, input_embeddings):
         """
@@ -91,8 +99,8 @@ class SoftPromptEmbedding(nn.Module):
             torch.Tensor: The concatenated soft prompts and original embeddings.
         """
         # TODO: Expand soft prompt to match batch size
-        batch_size = None
-        soft_prompt_expanded = None
+        batch_size = input_embeddings.size(0)
+        soft_prompt_expanded = self.soft_prompt.unsqueeze(0).expand(batch_size, -1, -1)
 
         # TODO: Concatenate soft prompt and input embeddings
-        return None
+        return torch.cat((soft_prompt_expanded, input_embeddings), dim=1)
